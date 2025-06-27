@@ -31,6 +31,44 @@ def fit_surrogate( d, basis_terms, W, y_func, Z0_samples):
     var_ref = np.sum(c[1:]**2)
     return c, mean_ref, var_ref ,Psi
 
+
+# Exponential autocorrelation funtion
+def compute_correlation_matrix(X, X_ref, theta):
+    diff = (X[:, None, :] - X_ref[None, :, :]) / theta
+    return np.exp(-np.sum(np.abs(diff), axis=2))
+
+# LOO objective
+def loo_cv_objective(theta, X, y):
+    R = compute_correlation_matrix(X, X, theta)
+    try:
+        R_inv = np.linalg.inv(R)
+    except np.linalg.LinAlgError:
+        return np.inf, np.zeros_like(theta)
+    # LOOCV 잔차 u_i = (R⁻¹y)_i / (R⁻¹)_{ii}
+    b         = y.reshape(-1, 1)
+    a         = R_inv.dot(b).ravel()
+    diag_invR = np.diag(R_inv)
+    u         = a / diag_invR
+    # 목적함수 값
+    obj = np.sum(u**2)
+
+    # analytic gradient
+    grad = np.zeros_like(theta)
+    for k in range(theta.shape[0]):
+        # ∂R/∂θ_k  (exponential kernel)
+        Dk   = np.abs(X[:,k][:,None] - X[:,k][None,:])
+        dR   = -Dk * R
+        # ∂(R⁻¹) = -R⁻¹·dR·R⁻¹
+        dInv = - R_inv.dot(dR).dot(R_inv)
+
+        da    = dInv.dot(b).ravel()      # ∂a
+        ddiag = np.diag(dInv)            # ∂diag_invR
+        du    = (da * diag_invR - a * ddiag) / (diag_invR**2)
+
+        grad[k] = 2 * np.dot(u, du)
+
+    return obj, grad
+
 # Design functions
 def y0(X):
     X1 = X[..., 0]
