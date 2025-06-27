@@ -2,7 +2,7 @@ import numpy as np
 from scipy.optimize import minimize
 from whitening import compute_whitening_matrix
 from polybasis import generate_monomial_basis, compute_M_matrix
-from func2 import generate_qmc_normal_samples , fit_surrogate, y0, y1
+from functions import generate_qmc_normal_samples , fit_surrogate, y0, y1
 import Parameters   
 
 # 파라미터 설정
