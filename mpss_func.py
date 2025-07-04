@@ -46,10 +46,18 @@ def update_beta(beta_old, d0, d_old, c_new, c_old, d_bounds, err_vals):
 
 
 def get_subregion_bounds(d_center, beta, d_bounds):
+    """
+    d_center: 중심 설계값 (예: [5.0, 5.0, 3.0]) 서브 리즌마다 업데이트
+    beta: subregion 스케일 (예: [0.3, 0.3, 0.2]) 서브 리즌마다 업데이트
+    d_bounds: 전체 설계공간 경계 (예: [(0, 10), (0, 10), (1, 5)]) 이건 고정
+    
+    return: subregion 경계 [(lower1, upper1), (lower2, upper2), ...]
+    """
     bounds = []
-    dL, dU = d_bounds[i]
-    half_range = (dU - dL) / 2
-    lower = max(dL, d_center[i] - beta[i] * half_range)
-    upper = min(dU, d_center[i] + beta[i] * half_range)
-    bounds.append((lower, upper))
+    for i in range(len(d_center)):
+        dL, dU = d_bounds[i]
+        half_range = (dU - dL) / 2
+        lower = max(dL, d_center[i] - beta[i] * half_range)
+        upper = min(dU, d_center[i] + beta[i] * half_range)
+        bounds.append((lower, upper))
     return bounds

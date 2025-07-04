@@ -21,11 +21,10 @@ def scoreGauss(X, mu, cov):
 
 
 # fit_surrogate
-def fit_surrogate( d, basis_terms, W, y_func, Z0_samples): 
-    Z_samples = Z0_samples + d_init - d
-    M = compute_M_matrix(Z_samples, basis_terms)
+def fit_surrogate( basis_terms, W, y_func, Z0_samples): 
+    M = compute_M_matrix(Z0_samples, basis_terms)
     Psi = M @ W.T
-    y_samples = y_func(Z_samples)
+    y_samples = y_func(Z0_samples)
     c, *_ = np.linalg.lstsq(Psi, y_samples, rcond=None)
     mean_ref = c[0]
     var_ref = np.sum(c[1:]**2)
