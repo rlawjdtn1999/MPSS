@@ -2,7 +2,7 @@ import numpy as np
 from scipy.optimize import differential_evolution, NonlinearConstraint
 from whitening import compute_whitening_matrix
 from polybasis import generate_monomial_basis, compute_M_matrix
-from functions import generate_qmc_normal_samples , fit_surrogate, y1, y2, y3
+from functions import generate_qmc_normal_samples , fit_surrogate, rebase_surrogate, y1, y2, y3
 from mpss_func import get_subregion_bounds, update_beta
 import Parameters   
 
@@ -40,13 +40,6 @@ err_vals = {
 threshold   = 0
 mean_0 = mean - d_init # [0 0]
 
-c1_new_saved = None
-c2_new_saved = None
-c3_new_saved = None
-
-Psi1_new_saved = None
-Psi2_new_saved = None
-Psi3_new_saved = None
 
 basis_terms1 = generate_monomial_basis(N, S, m1)
 basis_terms2 = generate_monomial_basis(N, S, m2)
@@ -57,116 +50,124 @@ W2 = compute_whitening_matrix(N, S, m2, mean_0, cov )
 W3 = compute_whitening_matrix(N, S, m3, mean_0, cov )
 
 def objective(d):
-    d1 = d[..., 0]
-    d2 = d[..., 1]
-    return -d1 + d2
+    return -d[0] + d[1]
 
 def constraint1(d):
-    global c1_new_saved
-    global Psi1_new_saved
-
     Z_samples = X_samples - d
     M1 = compute_M_matrix(Z_samples, basis_terms1)
     Psi1_new = M1 @ W1.T
-
-    A = Psi1.T @ Psi1
-    B = Psi1.T @ (Psi1_new @ c1 )
-    c1_new = np.linalg.solve(A,B)
-    y_new   = Psi1_new @ c1_new  
+    y_new   = Psi1_new @ c1
     P_failure = np.sum(y_new < threshold) / len(y_new)
-
-    c1_new_saved = c1_new
-    Psi1_new_saved = Psi1_new
 
     return   1.35e-3 - P_failure 
 
 def constraint2(d):
-    global c2_new_saved
-    global Psi2_new_saved
-
     Z_samples = X_samples - d
     M2 = compute_M_matrix(Z_samples, basis_terms2)
     Psi2_new = M2 @ W2.T
-
-    A = Psi2.T @ Psi2
-    B = Psi2.T @ (Psi2_new @ c2 )
-    c2_new = np.linalg.solve(A,B)
-    y_new   =  Psi2_new @ c2_new
+    y_new   =  Psi2_new @ c2
     P_failure = np.sum(y_new < threshold) / len(y_new)
-
-    c2_new_saved = c2_new
-    Psi2_new_saved = Psi2_new
 
     return  1.35e-3 - P_failure 
 
 def constraint3(d):
-    global c3_new_saved
-    global Psi3_new_saved
-
     Z_samples = X_samples - d
     M3 = compute_M_matrix(Z_samples, basis_terms3)
     Psi3_new = M3 @ W3.T
-
-    A = Psi3.T @ Psi3
-    B = Psi3.T @ (Psi3_new @ c3 )
-    c3_new = np.linalg.solve(A,B)
-    y_new   =  Psi3_new @ c3_new
+    y_new   =  Psi3_new @ c3
     P_failure = np.sum(y_new < threshold) / len(y_new)
-
-    c3_new_saved = c3_new
-    Psi3_new_saved = Psi3_new
 
     return  1.35e-3 - P_failure 
 
 def constraint_vector(d):
     return np.array([constraint1(d), constraint2(d), constraint3(d)])
 
+def is_feasible(d):
+    cv = constraint_vector(d)       # [c1(d), c2(d), c3(d)]
+    return np.all(cv >= 0)          # 모두 ≥0 이면 feasible
+
+cons = [constraint1, constraint2, constraint3]
+
+def obj_with_penalty(d, gamma=1e6):
+    pen = sum(max(0, -c(d)) for c in cons)
+    return objective(d) + gamma * pen
+
 ################     MPSS   q = 1   ################################
 
-X_samples = generate_qmc_normal_samples(mean, cov, 128)
-d0 = d_init
-d_old = np.array([10.0, 10.0])
+X0_samples  = generate_qmc_normal_samples(mean, cov, 128)
+X_samples   = generate_qmc_normal_samples(mean, cov, int(10e4))
 
-Z0_samples = X_samples - d0
-c1, mean_y1_ref, var_y1_ref, Psi1 = fit_surrogate( basis_terms1, W1, y1, Z0_samples)
-c2, mean_y2_ref, var_y2_ref, Psi2 = fit_surrogate( basis_terms2, W2, y2, Z0_samples)
-c3, mean_y3_ref, var_y3_ref, Psi3 = fit_surrogate( basis_terms3, W3, y3, Z0_samples)
+d0 = d_init
+Z0_samples = X0_samples - d0
+
+c1, Psi1 = fit_surrogate( basis_terms1, W1, y1, Z0_samples)
+c2, Psi2 = fit_surrogate( basis_terms2, W2, y2, Z0_samples)
+c3, Psi3 = fit_surrogate( basis_terms3, W3, y3, Z0_samples)
 
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
-nonlinear_constraint = NonlinearConstraint(constraint_vector, lb=0, ub=np.inf)
+print(subregion_bounds)
 
 result1 = differential_evolution(
-    func=objective,
-    bounds=subregion_bounds,             # 경계 조건 유지
-    constraints=(nonlinear_constraint,), # ✅ 튜플/리스트로 묶기
+    func=obj_with_penalty,
+    bounds=subregion_bounds,            
     strategy='best1bin',
-    maxiter=1000,
+    maxiter=15,
     popsize=15,
     tol=1e-3,
-    disp=False
+    workers=1,     
+    disp=True
 )
 
 d_old = d0 # [5 5]
-d0 = result1.x # [3.2 4.4]
+d0    = result1.x #e.g. [3.2 4.4]
 
-constraint1(d0)
-constraint2(d0)
-constraint3(d0)
+c1, Psi1 = rebase_surrogate(d0, basis_terms1, W1, c1, Psi1, X0_samples)
+c2, Psi2 = rebase_surrogate(d0, basis_terms2, W2, c2, Psi2, X0_samples)
+c3, Psi3 = rebase_surrogate(d0, basis_terms3, W3, c3, Psi3, X0_samples)
 
-c1 = c1_new_saved
-c2 = c2_new_saved 
-c3 = c3_new_saved
 
-Psi1 = Psi1_new_saved
-Psi2 = Psi2_new_saved
-Psi3 = Psi3_new_saved
-
-objective_value_old = objective(d_old)
-objective_value_new = objective(d0)
-
-################     MPSS   q > 1  ################################
+################   find feasible  ################################
 d_history = [d0.copy()]
 
+while not is_feasible(d0):
+
+    Z0_samples = X_samples - d0
+
+    c_new = np.array([constraint1(d0), constraint2(d0), constraint3(d0)])
+    c_old = np.array([constraint1(d_old), constraint2(d_old), constraint3(d_old)])
+
+    beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
+
+    subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
+    nonlinear_constraint = NonlinearConstraint(constraint_vector, lb=0, ub=np.inf)
+
+    res2 = differential_evolution(
+        func=obj_with_penalty,
+        bounds=subregion_bounds,            
+        strategy='best1bin',
+        maxiter=10,
+        popsize=15,
+        tol=1e-3,
+        workers=1,      
+        disp=True
+    )
+
+    d_old = d0 
+    d0 = res2.x 
+
+    c1, Psi1 = rebase_surrogate(d0, basis_terms1, W1, c1, Psi1, X0_samples)
+    c2, Psi2 = rebase_surrogate(d0, basis_terms2, W2, c2, Psi2, X0_samples)
+    c3, Psi3 = rebase_surrogate(d0, basis_terms3, W3, c3, Psi3, X0_samples)
+
+    d_history.append(d0.copy())
+    print("d0 iteration history:")
+    for i, d in enumerate(d_history):
+        print(f"iter {i}: {d}")
+
+    objective_value_old = objective(d_old)
+    objective_value_new = objective(d0)
+
+################     MPSS   q > 1  ################################
 while (
     np.linalg.norm(d0 - d_old) > err1 and 
     np.abs(objective_value_new - objective_value_old) > err2
@@ -178,38 +179,29 @@ while (
     c_old = np.array([constraint1(d_old), constraint2(d_old), constraint3(d_old)])
 
     beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
-    print(beta)
-    subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
-    print(subregion_bounds)
 
+    subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
     nonlinear_constraint = NonlinearConstraint(constraint_vector, lb=0, ub=np.inf)
 
-    result1 = differential_evolution(
-        func=objective,
-        bounds=subregion_bounds,             
-        constraints=(nonlinear_constraint,), 
+    res2 = differential_evolution(
+        func=objective,               # –d[0] + d[1]
+        bounds=subregion_bounds,
+        constraints=(nonlinear_constraint,),
         strategy='best1bin',
-        maxiter=1000,
-        popsize=50,
-        tol=1e-3,
-        disp=False
+        popsize=15,
+        maxiter=300,
+        tol=1e-6,           
+        polish=False,
+        workers=1,
+        disp=True
     )
 
     d_old = d0 
-    d0 = result1.x 
+    d0 = res2.x 
 
-    constraint1(d0)
-    constraint2(d0)
-    constraint3(d0)
-
-    c1   = c1_new_saved
-    c2   = c2_new_saved
-    c3   = c3_new_saved
-    
-    Psi1 = Psi1_new_saved
-    Psi2 = Psi2_new_saved
-    Psi3 = Psi3_new_saved
-
+    c1, Psi1 = rebase_surrogate(d0, basis_terms1, W1, c1, Psi1, X0_samples)
+    c2, Psi2 = rebase_surrogate(d0, basis_terms2, W2, c2, Psi2, X0_samples)
+    c3, Psi3 = rebase_surrogate(d0, basis_terms3, W3, c3, Psi3, X0_samples)
 
     d_history.append(d0.copy())
     print("d0 iteration history:")
@@ -218,10 +210,3 @@ while (
 
     objective_value_old = objective(d_old)
     objective_value_new = objective(d0)
-
-
-
-print("d0 iteration history:")
-for i, d in enumerate(d_history):
-    print(f"iter {i}: {d}")
-print(d0)

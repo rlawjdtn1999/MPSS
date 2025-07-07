@@ -1,58 +1,55 @@
 import numpy as np
 
 
-def update_beta(beta_old, d0, d_old, c_new, c_old, d_bounds, err_vals):
-    """
-    Parameters:
-    - beta_old: 현재 beta 리스트
-    - d0: 현재 설계 벡터
-    - d_old: 이전 설계 벡터
-    - c_new: 현재 constraint 값들 (np.array)
-    - c_old: 이전 constraint 값들 (np.array)
-    - d_bounds: 설계 변수 하한/상한 [(L, U), ...]
-    - err_vals: tolerance 값들 dict (err3 ~ err7)
+def update_beta(beta_old, d_new, d_old, c_new, c_old, d_bounds, err):
 
-    Returns:
-    - beta_new: 업데이트된 beta 리스트
-    """
-    phi = 1.618  # 황금비
-    beta_new = beta_old.copy()
-    M = len(d0)
+    phi = (1 + np.sqrt(5)) / 2   # 황금비 ≈1.618
+    beta_new = np.array(beta_old, copy=True)
+    M = len(beta_new)
+    K = len(c_new)
 
+    # --- Step 6-1 & 6-2: 제약 변화량 기준 (전 제약 l에 대해 검사) ---
+    # 6-1: any constraint 변화가 작으면 β *= (2-1/φ)
+    flag_inc = any(
+        abs(c_new[l] - c_old[l]) <= err["err3"] * abs(c_new[l])
+        for l in range(K)
+    )
+    # 6-2: any constraint 변화가 크면 β /= φ
+    flag_dec = any(
+        abs(c_new[l] - c_old[l]) >= err["err4"] * abs(c_new[l])
+        for l in range(K)
+    )
+
+    if flag_inc:
+        beta_new = np.minimum(1.0, (2 - 1/phi) * beta_new)
+        return beta_new
+    elif flag_dec:
+        beta_new = beta_new / phi
+        return beta_new
+
+    # --- Step 6-3, 6-4, 6-5: 각 축별 세부 업데이트 ---
     for k in range(M):
-        # Step 6-1: constraint 변화가 작으면 beta 증가
-        if np.linalg.norm(c_new - c_old) <= err_vals["err3"] * np.linalg.norm(c_new):
-            beta_new[k] = min(1.0, (2 - 1/phi) * beta_old[k])
+        lb, ub = d_bounds[k]
 
-        # Step 6-2: constraint 변화가 크면 beta 감소
-        elif np.linalg.norm(c_new - c_old) >= err_vals["err4"] * np.linalg.norm(c_new):
-            beta_new[k] = beta_old[k] / phi
+        # 6-3: 설계변수 경계 active → β *= (2-1/φ)
+        if (d_new[k] - lb) <= err["err5"] or (ub - d_new[k]) <= err["err5"]:
+            beta_new[k] = min(1.0, (2 - 1/phi) * beta_new[k])
 
-        # Step 6-3: d가 경계에 가까우면 beta 증가
-        if abs(d0[k] - d_bounds[k][0]) <= err_vals["err5"] or abs(d0[k] - d_bounds[k][1]) <= err_vals["err5"]:
-            beta_new[k] = min(1.0, (2 - 1/phi) * beta_old[k])
+        # 6-4: 설계변수 변화 작음 → β /= φ
+        if abs(d_new[k] - d_old[k]) <= err["err6"]:
+            beta_new[k] = beta_new[k] / phi
 
-        # Step 6-4: d 변화가 작으면 beta 감소
-        if abs(d0[k] - d_old[k]) <= err_vals["err6"]:
-            beta_new[k] = beta_old[k] / phi
-
-        # Step 6-5: beta 너무 작아지면 최소값 유지
-        min_beta = err_vals["err7"] / (d_bounds[k][1] - d_bounds[k][0])
-        if beta_new[k] < min_beta:
-            beta_new[k] = min_beta
+        # 6-5: 최소 이동 한계 보장
+        span = ub - lb
+        if beta_new[k] * span <= err["err7"]:
+            beta_new[k] = err["err7"] / span
 
     return beta_new
 
 
 
 def get_subregion_bounds(d_center, beta, d_bounds):
-    """
-    d_center: 중심 설계값 (예: [5.0, 5.0, 3.0]) 서브 리즌마다 업데이트
-    beta: subregion 스케일 (예: [0.3, 0.3, 0.2]) 서브 리즌마다 업데이트
-    d_bounds: 전체 설계공간 경계 (예: [(0, 10), (0, 10), (1, 5)]) 이건 고정
-    
-    return: subregion 경계 [(lower1, upper1), (lower2, upper2), ...]
-    """
+
     bounds = []
     for i in range(len(d_center)):
         dL, dU = d_bounds[i]

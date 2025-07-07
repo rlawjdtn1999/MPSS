@@ -4,8 +4,6 @@ from scipy.stats import norm
 from scipy.stats import qmc
 from polybasis import compute_M_matrix
 
-d_init    = np.array([5.0, 5.0])
-
 # QMC normal sample generator
 def generate_qmc_normal_samples(mean, cov, n_samples):
     sampler = qmc.Sobol(d=len(mean), scramble=True)
@@ -15,20 +13,27 @@ def generate_qmc_normal_samples(mean, cov, n_samples):
     L = np.linalg.cholesky(cov)
     return mean + normal_samples @ L.T
 
-# scoreGauss
-def scoreGauss(X, mu, cov):
-    return np.array([ np.linalg.solve(cov, x - mu) for x in X ])
-
-
 # fit_surrogate
 def fit_surrogate( basis_terms, W, y_func, Z0_samples): 
     M = compute_M_matrix(Z0_samples, basis_terms)
     Psi = M @ W.T
     y_samples = y_func(Z0_samples)
     c, *_ = np.linalg.lstsq(Psi, y_samples, rcond=None)
-    mean_ref = c[0]
-    var_ref = np.sum(c[1:]**2)
-    return c, mean_ref, var_ref ,Psi
+    # mean_ref = c[0]
+    # var_ref = np.sum(c[1:]**2)
+    return c, Psi
+
+#update c
+def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, X_samples):
+    Z = X_samples - d 
+    M = compute_M_matrix(Z, basis_terms)      
+    Psi_new = M @ W.T                         
+
+    A = Psi_old.T @ Psi_old                   
+    B = Psi_old.T @ (Psi_new @ c_old)         
+    c_new = np.linalg.solve(A, B)            
+
+    return c_new, Psi_new
 
 # Design functions
 def y1(X):
