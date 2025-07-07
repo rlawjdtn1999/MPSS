@@ -134,6 +134,7 @@ c3, mean_y3_ref, var_y3_ref, Psi3 = fit_surrogate( basis_terms3, W3, y3, Z0_samp
 
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 nonlinear_constraint = NonlinearConstraint(constraint_vector, lb=0, ub=np.inf)
+
 result1 = differential_evolution(
     func=objective,
     bounds=subregion_bounds,             # 경계 조건 유지
@@ -145,6 +146,13 @@ result1 = differential_evolution(
     disp=False
 )
 
+d_old = d0 # [5 5]
+d0 = result1.x # [3.2 4.4]
+
+constraint1(d0)
+constraint2(d0)
+constraint3(d0)
+
 c1 = c1_new_saved
 c2 = c2_new_saved 
 c3 = c3_new_saved
@@ -153,13 +161,10 @@ Psi1 = Psi1_new_saved
 Psi2 = Psi2_new_saved
 Psi3 = Psi3_new_saved
 
-d_old = d0 # [5 5]
-d0 = result1.x # [3.2 4.4]
-
 objective_value_old = objective(d_old)
 objective_value_new = objective(d0)
 
-################     MPSS   q >= 2  ################################
+################     MPSS   q > 1  ################################
 d_history = [d0.copy()]
 
 while (
@@ -173,7 +178,6 @@ while (
     c_old = np.array([constraint1(d_old), constraint2(d_old), constraint3(d_old)])
 
     beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
-    # beta = update_beta(beta_init, d0, d_old, c_new, c_old, d_bounds, err_vals)
     print(beta)
     subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
     print(subregion_bounds)
@@ -182,25 +186,30 @@ while (
 
     result1 = differential_evolution(
         func=objective,
-        bounds=subregion_bounds,             # 경계 조건 유지
-        constraints=(nonlinear_constraint,), # ✅ 튜플/리스트로 묶기
+        bounds=subregion_bounds,             
+        constraints=(nonlinear_constraint,), 
         strategy='best1bin',
         maxiter=1000,
-        popsize=15,
+        popsize=50,
         tol=1e-3,
         disp=False
     )
 
-    c1 = c1_new_saved
-    c2 = c2_new_saved
-    c3 = c3_new_saved
+    d_old = d0 
+    d0 = result1.x 
+
+    constraint1(d0)
+    constraint2(d0)
+    constraint3(d0)
+
+    c1   = c1_new_saved
+    c2   = c2_new_saved
+    c3   = c3_new_saved
     
     Psi1 = Psi1_new_saved
     Psi2 = Psi2_new_saved
     Psi3 = Psi3_new_saved
 
-    d_old = d0
-    d0 = result1.x
 
     d_history.append(d0.copy())
     print("d0 iteration history:")
