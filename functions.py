@@ -39,12 +39,12 @@ def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, X_samples):
 def y1(X):
     X1 = X[..., 0]
     X2 = X[..., 1]
-    return -1 + X1**2 * X2 / 20
+    return -1 + (X1**2 * X2)/ 20
 
 def y2(X):
     X1 = X[..., 0]
     X2 = X[..., 1]
-    return -1 + (X1 + X2 - 5)**2/30 + (X1 - X2 - 12)**2/ 120 
+    return -1 + ((X1 + X2 - 5)**2) / 30 + ((X1 - X2 - 12)**2) / 120
 
 def y3(X):
     X1 = X[..., 0]
