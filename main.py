@@ -8,8 +8,8 @@ import Parameters
 
 # 파라미터 설정
 N         = Parameters.N  #2
-S         = Parameters.S  #1
-m         = Parameters.m  #[3, 3, 4]
+S         = Parameters.S  #2
+m         = Parameters.m  #[4, 4, 4]
 m1        = Parameters.m[0]
 m2        = Parameters.m[1]
 m3        = Parameters.m[2]
@@ -79,7 +79,7 @@ def constraint2(d):
     B = Psi2.T @ (Psi2_new @ c2 )
     c2_new = np.linalg.solve(A,B)
 
-    Z_samples = X_samples - d       # 1e6
+    Z_samples = X0_samples - d       # 1e6
     M2 = compute_M_matrix(Z_samples, basis_terms2)
     Psi2_test = M2 @ W2.T   
 
@@ -90,7 +90,7 @@ def constraint2(d):
 
 def constraint3(d):
     # Psi3, c3 이 old 다 
-    Z_samples = X_samples - d
+    Z_samples = X0_samples - d
     M = compute_M_matrix(Z_samples, basis_terms3)
     Psi3_new = M @ W3.T
     A = Psi3.T @ Psi3
@@ -151,7 +151,7 @@ def obj_piecewise(d,
 
 ################     MPSS   q = 1   ################################
 
-X0_samples  = generate_qmc_normal_samples(mean, cov, 128)
+X0_samples  = generate_qmc_normal_samples(mean, cov, 64)
 X_samples   = generate_qmc_normal_samples(mean, cov, int(1e6))
 
 d0 = d_init
@@ -170,6 +170,8 @@ result1 = differential_evolution(
     strategy='best1bin',
     maxiter=20,
     popsize=30,
+    mutation=(0.7, 1.5),
+    recombination=0.9,
     tol=1e-3,
     workers=-1,     
     disp=True
