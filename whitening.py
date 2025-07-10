@@ -2,6 +2,7 @@
 import numpy as np
 from scipy.stats import norm, qmc
 from itertools import combinations
+from numba import njit, prange 
 
 def generate_monomial_basis(N, S, m):
     basis_terms = [((), ())]
@@ -24,16 +25,47 @@ def generate_monomial_basis(N, S, m):
     return basis_terms
 
 
-def compute_M_matrix(X, basis_terms):
-    n = X.shape[0]
-    M = np.zeros((n, len(basis_terms)))
-    for i, (nu, power) in enumerate(basis_terms):
-        if len(nu) == 0:
-            M[:, i] = 1
-        else:
-            M[:, i] = np.prod(X[:, list(nu)]**power, axis=1)
+# def compute_M_matrix(X, basis_terms):
+#     n = X.shape[0]
+#     M = np.zeros((n, len(basis_terms)))
+#     for i, (nu, power) in enumerate(basis_terms):
+#         if len(nu) == 0:
+#             M[:, i] = 1
+#         else:
+#             M[:, i] = np.prod(X[:, list(nu)]**power, axis=1)
+#     return M
+
+@njit(parallel=True, fastmath=True)
+def compute_M_matrix_numba(X, basis_terms_nu, basis_terms_power):
+    n_samples = X.shape[0]
+    n_terms = len(basis_terms_nu)
+    M = np.zeros((n_samples, n_terms))
+    for i in range(n_terms):
+        nu = basis_terms_nu[i]
+        power = basis_terms_power[i]
+        # 상수항
+        if nu.size == 0:
+            for j in prange(n_samples):
+                M[j, i] = 1.0
+            continue
+        # 일반항
+        for j in prange(n_samples):
+            prod = 1.0
+            for k in range(nu.size):
+                prod *= X[j, nu[k]] ** power[k]
+            M[j, i] = prod
     return M
 
+# 외부에서 호출할 때는 wrapper를 사용해 basis_terms를 배열 리스트로 변환
+def compute_M_matrix(X, basis_terms):
+    """
+    numpy 버전 대신 이 함수를 호출하세요.
+    basis_terms: List of (nu: list[int], power: list[float])
+    """
+    # numba가 이해할 수 있게 int64, float64 배열로 변환
+    basis_terms_nu = [np.array(bt[0], dtype=np.int64)   for bt in basis_terms]
+    basis_terms_power = [np.array(bt[1], dtype=np.float64) for bt in basis_terms]
+    return compute_M_matrix_numba(X, basis_terms_nu, basis_terms_power)
 
 def sample_qmc_norm(mean, cov, sampler, batch_size):
     u = sampler.random(batch_size)
@@ -70,5 +102,5 @@ def compute_whitening_matrix(N, S, m, mean, cov, total_samples=5000000, batch_si
     G = G_accum / total_samples
     # chol and whitening
     L = np.linalg.cholesky(G)
-    W = np.linalg.inv(L.T)
+    W = np.linalg.inv(L)
     return W
