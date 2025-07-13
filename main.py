@@ -19,7 +19,6 @@ d_bounds  = [(0.0, 10.0), (0.0, 10.0)]
 
 beta      = [0.3, 0.3]
 
-
 err1      = Parameters.err1 #1e-3
 err2      = Parameters.err2 #1e-3
 err3      = Parameters.err3 #0.01
@@ -85,8 +84,6 @@ def unified_constraint_vector(d):
     ])
 
 
-nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
-
 ################     MPSS   q = 1   ################################
 
 X0_samples  = generate_qmc_normal_samples(mean, cov, 64)
@@ -107,6 +104,8 @@ A3 = Psi3.T @ Psi3
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 print(subregion_bounds)
 
+
+nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
 
 result1 = differential_evolution(
     func = objective, # 또는 obj_feas
@@ -132,7 +131,55 @@ c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
 objective_value_old = objective(d_old)
 objective_value_new = objective(d0)
 
-################    after feasible     ################################)
+c_new = unified_constraint_vector(d0)
+
+################    find  feasible     ################################
+while (
+    np.any(c_new > 0)                   # <-- 하나라도 위반이 있으면(True) 계속
+):
+
+    Z0_samples = X_samples - d0
+
+    A1 = Psi1.T @ Psi1
+    A2 = Psi2.T @ Psi2
+    A3 = Psi3.T @ Psi3
+
+    c_new = unified_constraint_vector(d0) 
+    c_old = unified_constraint_vector(d_old)
+
+    beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
+
+    subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
+    
+    print(subregion_bounds)
+
+    nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
+    result2 = differential_evolution(
+        func = objective, # 또는 obj_feas
+        bounds = subregion_bounds,
+        constraints = nlc_unified, # 수정된 부분
+        maxiter=15,
+        popsize=20,
+        mutation=(0.7, 1.5),
+        recombination=0.7,
+        tol=1e-3,
+        workers=-1,     
+        disp=True
+    )
+
+    d_old = d0 
+    d0 = result2.x     
+    print(d0)
+
+    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
+    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
+    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
+
+    objective_value_old = objective(d_old)
+    objective_value_new = objective(d0)
+
+
+################    after feasible     ################################
 d_history = [d0.copy()]
 
 while (
@@ -149,12 +196,12 @@ while (
     c_new = unified_constraint_vector(d0)
     c_old = unified_constraint_vector(d_old)
 
-    beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
-
+    beta = update_
     subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 
     print(subregion_bounds)
 
+    nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
     result3 = differential_evolution(
         func = objective, # 또는 obj_feas
         bounds = subregion_bounds,
@@ -177,11 +224,12 @@ while (
     c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
     c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
 
+
+    objective_value_old = objective(d_old)
+    objective_value_new = objective(d0)
+
     d_history.append(d0.copy())
     print("d0 iteration history:")
     for i, d in enumerate(d_history):
         print(f"iter {i}: {d}")
-
-    objective_value_old = objective(d_old)
-    objective_value_new = objective(d0)
 
