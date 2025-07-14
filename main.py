@@ -5,12 +5,14 @@ from polybasis import generate_monomial_basis, compute_M_matrix
 from functions import generate_qmc_normal_samples , fit_surrogate, rebase_surrogate, y1, y2, y3
 from mpss_func import get_subregion_bounds, update_beta
 import Parameters   
+import matplotlib.pyplot as plt
 
-# 파라미터 설정
+
+##########################      파라미터 설정    ########################## 
 N         = Parameters.N  #2
-S         = Parameters.S  #2
+S         = Parameters.S  #2 , GPCE와 똑같음
 m         = Parameters.m  #[4, 4, 4]
-m1        = Parameters.m[0] # 효율을 위해 하나로 통일함
+m1        = Parameters.m[0] # 효율을 위해 하나로 통일
 mean      = np.array(Parameters.mean)
 cov       = np.array(Parameters.cov1)
 
@@ -18,6 +20,8 @@ d_init    = np.array([5.0, 5.0])    # 초기 설계 변수
 d_bounds  = [(0.0, 10.0), (0.0, 10.0)]  
 
 beta      = [0.3, 0.3]
+penalty_coeff = 1e2     # 패널티 가중치
+threesigma    = 1.35e-3    # 실패 확률 예제는 3시그마
 
 err1      = Parameters.err1 #1e-3
 err2      = Parameters.err2 #1e-3
@@ -41,6 +45,8 @@ mean_0 = mean - d_init # [0 0]
 basis_terms = generate_monomial_basis(N, S, m1)
 
 W = compute_whitening_matrix(N, S, m1, mean_0, cov )
+
+##########################      func    ##########################
 
 def objective(d):
     return -d[0] + d[1]
@@ -78,10 +84,56 @@ def unified_constraint_vector(d):
 
     # 5. 세 제약조건의 결과를 벡터(배열)로 반환
     return np.array([
-        P_failure1 - 1.35e-3,
-        P_failure2 - 1.35e-3,
-        P_failure3 - 1.35e-3
+        P_failure1 - threesigma,
+        P_failure2 - threesigma,
+        P_failure3 - threesigma
     ])
+
+def obj_with_penalty(d):
+    f = objective(d)
+    c = unified_constraint_vector(d)  # [P1-α, P2-α, P3-α]
+    violation = np.maximum(0, c)
+    return f + penalty_coeff  * np.sum(violation**2)
+
+##########################   d 추적   ##########################
+plt.ion()
+fig, ax = plt.subplots()
+ax.set_xlim(d_bounds[0])
+ax.set_ylim(d_bounds[1])
+
+# 빈 산점도 & 텍스트 리스트
+scat = ax.scatter([], [], s=30)
+texts = []
+history = []
+
+def plot_callback(xk, convergence):
+    history.append(xk.copy())
+    H = np.array(history)
+    xs, ys = H[:,0], H[:,1]
+
+    # 1) 산점도 갱신
+    scat.set_offsets(np.c_[xs, ys])
+
+    # 2) 이전 텍스트 지우기
+    for txt in texts:
+        txt.remove()
+    texts.clear()
+
+    # 3) 각 점에 좌표 텍스트 추가
+    for xi, yi in zip(xs, ys):
+        txt = ax.text(
+            xi, yi,
+            f"({xi:.2f}, {yi:.2f})",
+            fontsize=8,
+            ha='left', va='bottom'
+        )
+        texts.append(txt)
+
+    # 4) 화면 갱신
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+    plt.pause(0.01)
+
 
 
 ################     MPSS   q = 1   ################################
@@ -104,19 +156,36 @@ A3 = Psi3.T @ Psi3
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 print(subregion_bounds)
 
+result1 = differential_evolution(
+    func = obj_with_penalty, 
+    bounds = subregion_bounds,
+    # constraints = nlc_unified, 
+    strategy='rand1bin',
+    maxiter=15,
+    popsize=20,
+    mutation=(0.7, 1.5),
+    recombination=0.7,
+    tol=1e-2,
+    workers=1,
+    polish=False,   # 효율을 위해서    
+    callback    = plot_callback,        # ← 여기에 등록!
+    disp=True
+)
 
 nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
-
 result1 = differential_evolution(
-    func = objective, # 또는 obj_feas
+    func = objective, # 또는 obj_with_penalty
     bounds = subregion_bounds,
-    constraints = nlc_unified, # 수정된 부분
+    constraints = nlc_unified,
+    strategy='best1bin',
     maxiter=15,
     popsize=20,
     mutation=(0.7, 1.5),
     recombination=0.7,
     tol=1e-3,
-    workers=-1,     
+    workers=1,  
+    callback    = plot_callback,     
+    polish=True,
     disp=True
 )
 
@@ -133,12 +202,9 @@ objective_value_new = objective(d0)
 
 c_new = unified_constraint_vector(d0)
 
-################    find  feasible     ################################
-while (
-    np.any(c_new > 0)                   # <-- 하나라도 위반이 있으면(True) 계속
+###########################    find  feasible     ################################
+while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으면(True) 계속
 ):
-
-    Z0_samples = X_samples - d0
 
     A1 = Psi1.T @ Psi1
     A2 = Psi2.T @ Psi2
@@ -147,29 +213,38 @@ while (
     c_new = unified_constraint_vector(d0) 
     c_old = unified_constraint_vector(d_old)
 
+    print("Constraint violations:", c_new)
+    print("All ≤0? ", np.all(c_new <= 0))
+
+    print("  → constraint values:", c_new, "  all feasible?", np.all(c_new <= 0))
+    
     beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
 
     subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
     
     print(subregion_bounds)
-
-    nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
+    print("=== result2 시작: ")
+    # nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
     result2 = differential_evolution(
-        func = objective, # 또는 obj_feas
+        func = obj_with_penalty, 
         bounds = subregion_bounds,
-        constraints = nlc_unified, # 수정된 부분
+        # constraints = nlc_unified, 
+        strategy='rand1bin',
         maxiter=15,
         popsize=20,
         mutation=(0.7, 1.5),
         recombination=0.7,
         tol=1e-3,
-        workers=-1,     
+        workers=1,  
+        polish=False,  
+        callback    = plot_callback, 
         disp=True
     )
 
     d_old = d0 
-    d0 = result2.x     
-    print(d0)
+    d0 = result2.x 
+
+    print("Final design: ", d0)
 
     c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
     c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
@@ -179,7 +254,7 @@ while (
     objective_value_new = objective(d0)
 
 
-################    after feasible     ################################
+###########################    after feasible     ################################
 d_history = [d0.copy()]
 
 while (
@@ -187,34 +262,39 @@ while (
     np.abs(objective_value_new - objective_value_old) > err2
 ):
 
-    Z0_samples = X_samples - d0
 
     A1 = Psi1.T @ Psi1
     A2 = Psi2.T @ Psi2
     A3 = Psi3.T @ Psi3
 
     c_new = unified_constraint_vector(d0)
-    c_old = unified_constraint_vector(d_old)
+    c_old = unified_constraint_vector(d_old)    
 
-    beta = update_
+    print("Constraint violations:", c_new)
+    print("All ≤0? ", np.all(c_new <= 0))
+    
+    beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
     subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 
     print(subregion_bounds)
 
+    print("=== result3 시작: ")
     nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
     result3 = differential_evolution(
-        func = objective, # 또는 obj_feas
+        func = objective, # 또는 obj_with_penalty
         bounds = subregion_bounds,
-        constraints = nlc_unified, # 수정된 부분
+        constraints = nlc_unified,
+        strategy='best1bin',
         maxiter=15,
         popsize=20,
         mutation=(0.7, 1.5),
         recombination=0.7,
         tol=1e-3,
-        workers=-1,     
+        workers=1,  
+        callback    = plot_callback,     
+        polish=True,
         disp=True
     )
-
 
     d_old = d0 
     d0 = result3.x     
@@ -227,7 +307,7 @@ while (
 
     objective_value_old = objective(d_old)
     objective_value_new = objective(d0)
-
+    
     d_history.append(d0.copy())
     print("d0 iteration history:")
     for i, d in enumerate(d_history):
