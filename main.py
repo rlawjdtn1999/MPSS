@@ -134,8 +134,6 @@ def plot_callback(xk, convergence):
     fig.canvas.flush_events()
     plt.pause(0.01)
 
-
-
 ################     MPSS   q = 1   ################################
 
 X0_samples  = generate_qmc_normal_samples(mean, cov, 64)
@@ -152,7 +150,34 @@ A1 = Psi1.T @ Psi1
 A2 = Psi2.T @ Psi2
 A3 = Psi3.T @ Psi3
 
+###########################    findfeasible1    ################################
+c_new = unified_constraint_vector(d0)
+MAX_INTERP_ATTEMPTS = 10
+interp_attempts     = 0
+while np.any(c_new > 0) and interp_attempts < MAX_INTERP_ATTEMPTS:
+    print(f"보간 시도 #{interp_attempts + 1}...")
 
+    # 1. 보간으로 새로운 후보 지점 계산
+    d_safe_guess = np.array([5.0, 5.0]) # 예: 설계 공간의 중심
+    d_new = 0.7 * d0 + 0.3 * d_safe_guess # 현재 지점에 더 가중치를 둠
+
+    # 2. 상태 및 계수 업데이트
+    d_old = d0
+    d0 = d_new
+
+    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
+    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
+    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
+
+    A1 = Psi1.T @ Psi1
+    A2 = Psi2.T @ Psi2
+    A3 = Psi3.T @ Psi3
+    # 3. 업데이트된 모델로 제약조건 재계산
+    c_new = unified_constraint_vector(d0)
+    interp_attempts += 1
+
+    print(f"  → 새 지점: {d0}, 제약조건 위반 값: {c_new[c_new > 0]}")
+#################################################################################
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 print(subregion_bounds)
 
@@ -168,24 +193,7 @@ result1 = differential_evolution(
     tol=1e-2,
     workers=1,
     polish=False,   # 효율을 위해서    
-    callback    = plot_callback,        # ← 여기에 등록!
-    disp=True
-)
-
-nlc_unified = NonlinearConstraint(unified_constraint_vector, -np.inf, 0.0)
-result1 = differential_evolution(
-    func = objective, # 또는 obj_with_penalty
-    bounds = subregion_bounds,
-    constraints = nlc_unified,
-    strategy='best1bin',
-    maxiter=15,
-    popsize=20,
-    mutation=(0.7, 1.5),
-    recombination=0.7,
-    tol=1e-3,
-    workers=1,  
-    callback    = plot_callback,     
-    polish=True,
+    callback    = plot_callback,        
     disp=True
 )
 
@@ -202,7 +210,7 @@ objective_value_new = objective(d0)
 
 c_new = unified_constraint_vector(d0)
 
-###########################    find  feasible     ################################
+###########################    find_feasible2     ################################
 while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으면(True) 계속
 ):
 
@@ -254,7 +262,7 @@ while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으�
     objective_value_new = objective(d0)
 
 
-###########################    after feasible     ################################
+###########################    after_feasible     ################################
 d_history = [d0.copy()]
 
 while (
