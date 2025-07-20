@@ -13,27 +13,40 @@ def generate_qmc_normal_samples(mean, cov, n_samples):
     L = np.linalg.cholesky(cov)
     return mean + normal_samples @ L.T
 
-# fit_surrogate
-def fit_surrogate( basis_terms, W, y_func, Z0_samples): 
+# fit_surrogate for multiple functions
+def fit_all_surrogates(basis_terms, W, y_funcs, Z0_samples):
+    # Psi is calculated only ONCE, as it's independent of y_funcs.
     M = compute_M_matrix(Z0_samples, basis_terms)
     Psi = M @ W.T
-    y_samples = y_func(Z0_samples)
-    c, *_ = np.linalg.lstsq(Psi, y_samples, rcond=None)
-    # mean_ref = c[0]
-    # var_ref = np.sum(c[1:]**2)
-    return c, Psi
+    
+    c_dict = {}
+    for y_func in y_funcs:
+        y_samples = y_func(Z0_samples)
+        c, *_ = np.linalg.lstsq(Psi, y_samples, rcond=None)
+        # Store the coefficient vector with the function name as the key
+        c_dict[y_func.__name__] = c
+        
+    return c_dict, Psi
 
-#update c
-def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, X_samples):
-    Z = X_samples - d 
-    M = compute_M_matrix(Z, basis_terms)      
-    Psi_new = M @ W.T                         
-
-    A = Psi_old.T @ Psi_old                   
-    B = Psi_old.T @ (Psi_new @ c_old)         
-    c_new = np.linalg.solve(A, B)            
-
-    return c_new, Psi_new
+# rebase_surrogate for multiple functions
+def rebase_all_surrogates(d, basis_terms, W, c_old_dict, Psi_old, X_samples):
+    # Calculate new Psi only ONCE.
+    Z = X_samples - d
+    M = compute_M_matrix(Z, basis_terms)
+    Psi_new = M @ W.T
+    
+    # Pre-calculate the A matrix for solving
+    A = Psi_old.T @ Psi_old
+    
+    c_new_dict = {}
+    # Iterate through the dictionary of old coefficients
+    for name, c_old in c_old_dict.items():
+        # Calculate the B matrix using the fake output data
+        B = Psi_old.T @ (Psi_new @ c_old)
+        c_new = np.linalg.solve(A, B)
+        c_new_dict[name] = c_new
+        
+    return c_new_dict, Psi_new
 
 # Design functions
 def y1(X):
