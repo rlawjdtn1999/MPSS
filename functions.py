@@ -35,8 +35,8 @@ def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, X_samples):
 
     return c_new, Psi_new
 
- # fit_surrogate for multiple functions
-def fit_all_surrogates(basis_terms, W, y_funcs, Z0_samples):
+# fit_surrogate for multiple functions
+def fit_all_surrogates( y_funcs):
      # Psi is calculated only ONCE, as it's independent of y_funcs.
     M = compute_M_matrix(Z0_samples, basis_terms)
     Psi = M @ W.T
@@ -51,7 +51,7 @@ def fit_all_surrogates(basis_terms, W, y_funcs, Z0_samples):
     return c_dict, Psi
 
 # rebase_surrogate for multiple functions
-def rebase_all_surrogates(d, basis_terms, W, c_old_dict, Psi_old, X_samples):
+def rebase_all_surrogates(d, c_old_dict, Psi_old):
     # Calculate new Psi only ONCE.
     Z = X_samples - d
     M = compute_M_matrix(Z, basis_terms)

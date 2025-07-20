@@ -1,9 +1,9 @@
 import numpy as np
-from scipy.optimize import differential_evolution, NonlinearConstraint
 from whitening import compute_whitening_matrix
 from polybasis import generate_monomial_basis, compute_M_matrix
 from functions import generate_qmc_normal_samples, fit_all_surrogates, rebase_all_surrogates, y1, y2, y3
 from mpss_func import get_subregion_bounds, update_beta
+from scipy.optimize import differential_evolution, NonlinearConstraint
 import Parameters   
 import matplotlib.pyplot as plt
 
@@ -39,11 +39,7 @@ err_vals = {
     "err7": err7
 }
 threshold   = 0
-mean_0 = mean - d_init # [0 0]
-
-
-basis_terms = generate_monomial_basis(N, S, m1)
-W = compute_whitening_matrix(N, S, m1, mean_0, cov )
+mean_0      = [0 , 0]
 
 ##########################      func    ##########################
 
@@ -119,9 +115,10 @@ def plot_callback(xk, convergence):
     fig.canvas.draw()
     fig.canvas.flush_events()
     plt.pause(0.01)
-
 ################     MPSS   q = 1   ################################
-
+# global_data
+basis_terms = generate_monomial_basis(N, S, m1)
+W = compute_whitening_matrix(N, S, m1, mean_0, cov )
 X_samples_coef  = generate_qmc_normal_samples(mean, cov, 64)
 X_samples   = generate_qmc_normal_samples(mean, cov, int(1e6))
 y_functions = [y1, y2, y3]
@@ -129,7 +126,7 @@ y_functions = [y1, y2, y3]
 d0 = d_init
 Z0_samples = X_samples_coef - d0
 
-c_dict, Psi = fit_all_surrogates(basis_terms, W, y_functions, Z0_samples)
+c_dict, Psi = fit_all_surrogates(y_functions)
 
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 print(subregion_bounds)
@@ -154,7 +151,7 @@ d_old = d0 # [5 5]
 d0    = result1.x #e.g. [3.2 4.4]
 print(d0)
 
-c_dict, Psi = rebase_all_surrogates(d0, basis_terms, W, c_dict, Psi, X_samples_coef)
+c_dict, Psi = rebase_all_surrogates(d0, c_dict, Psi)
 
 objective_value_old = objective(d_old)
 objective_value_new = objective(d0)
@@ -196,8 +193,7 @@ while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으�
     d0 = result2.x 
     print("Final design: ", d0)
 
-    c_dict, Psi = rebase_all_surrogates(d0, basis_terms, W, c_dict, Psi, X_samples_coef)
-    c1, c2, c3 = c_dict['y1'], c_dict['y2'], c_dict['y3']
+    c_dict, Psi = rebase_all_surrogates(d0, c_dict, Psi)
     
     objective_value_old = objective(d_old)
     objective_value_new = objective(d0)
@@ -240,7 +236,7 @@ while (
     d0 = result3.x     
     print("Final design: ", d0)
 
-    c_dict, Psi = rebase_all_surrogates(d0, basis_terms, W, c_dict, Psi, X_samples_coef)
+    c_dict, Psi = rebase_all_surrogates(d0, c_dict, Psi)
 
     objective_value_old = objective(d_old)
     objective_value_new = objective(d0)
