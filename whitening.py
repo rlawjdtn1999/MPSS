@@ -25,6 +25,7 @@ def generate_monomial_basis(N, S, m):
     return basis_terms
 
 
+## 기존 M 계산 함수
 # def compute_M_matrix(X, basis_terms):
 #     n = X.shape[0]
 #     M = np.zeros((n, len(basis_terms)))
@@ -35,6 +36,7 @@ def generate_monomial_basis(N, S, m):
 #             M[:, i] = np.prod(X[:, list(nu)]**power, axis=1)
 #     return M
 
+## 더 효율적인 M 계산 함수
 @njit(parallel=True, fastmath=True)
 def compute_M_matrix_numba(X, basis_terms_nu, basis_terms_power):
     n_samples = X.shape[0]

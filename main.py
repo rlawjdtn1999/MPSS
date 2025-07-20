@@ -43,7 +43,6 @@ mean_0 = mean - d_init # [0 0]
 
 
 basis_terms = generate_monomial_basis(N, S, m1)
-
 W = compute_whitening_matrix(N, S, m1, mean_0, cov )
 
 ##########################      func    ##########################
@@ -53,19 +52,19 @@ def objective(d):
 
 def unified_constraint_vector(d):
     # 1. 가장 무거운 계산을 단 한 번만 수행
-    Z0_samples = X0_samples - d
-    M = compute_M_matrix(Z0_samples, basis_terms)
-    Psi_rebase = M @ W.T
+    # Z0_samples = X_samples_coef - d
+    # M = compute_M_matrix(Z0_samples, basis_terms)
+    # Psi_rebase = M @ W.T
 
-    # 2. 각 제약조건에 대한 c_new 계산 (이 부분은 비교적 가벼움)
-    B1 = Psi1.T @ (Psi_rebase @ c1)
-    c1_new = np.linalg.solve(A1, B1)
+    # # 2. 각 제약조건에 대한 c_new 계산 (이 부분은 비교적 가벼움)
+    # B1 = Psi1.T @ (Psi_rebase @ c1)
+    # c1_new = np.linalg.solve(A1, B1)
 
-    B2 = Psi2.T @ (Psi_rebase @ c2)
-    c2_new = np.linalg.solve(A2, B2)
+    # B2 = Psi2.T @ (Psi_rebase @ c2)
+    # c2_new = np.linalg.solve(A2, B2)
 
-    B3 = Psi3.T @ (Psi_rebase @ c3)
-    c3_new = np.linalg.solve(A3, B3)
+    # B3 = Psi3.T @ (Psi_rebase @ c3)
+    # c3_new = np.linalg.solve(A3, B3)
 
     # 3. 100만개 샘플에 대한 Psi_test 계산도 단 한 번만 수행
     Z_samples_test = X_samples - d
@@ -73,13 +72,13 @@ def unified_constraint_vector(d):
     Psi_test = M_test @ W.T
 
     # 4. 각 제약조건의 파괴 확률 계산
-    y1_new = Psi_test @ c1_new
+    y1_new = Psi_test @ c1
     P_failure1 = np.sum(y1_new <= threshold) / len(y1_new)
 
-    y2_new = Psi_test @ c2_new
+    y2_new = Psi_test @ c2
     P_failure2 = np.sum(y2_new <= threshold) / len(y2_new)
 
-    y3_new = Psi_test @ c3_new
+    y3_new = Psi_test @ c3
     P_failure3 = np.sum(y3_new <= threshold) / len(y3_new)
 
     # 5. 세 제약조건의 결과를 벡터(배열)로 반환
@@ -136,47 +135,47 @@ def plot_callback(xk, convergence):
 
 ################     MPSS   q = 1   ################################
 
-X0_samples  = generate_qmc_normal_samples(mean, cov, 64)
+X_samples_coef  = generate_qmc_normal_samples(mean, cov, 64)
 X_samples   = generate_qmc_normal_samples(mean, cov, int(1e6))
 
 d0 = d_init
-Z0_samples = X0_samples - d0
+Z0_samples = X_samples_coef - d0
 
 c1, Psi1 = fit_surrogate( basis_terms, W, y1, Z0_samples)
 c2, Psi2 = fit_surrogate( basis_terms, W, y2, Z0_samples)
 c3, Psi3 = fit_surrogate( basis_terms, W, y3, Z0_samples)
 
-A1 = Psi1.T @ Psi1
-A2 = Psi2.T @ Psi2
-A3 = Psi3.T @ Psi3
+# A1 = Psi1.T @ Psi1
+# A2 = Psi2.T @ Psi2
+# A3 = Psi3.T @ Psi3
 
 ###########################    findfeasible1    ################################
-c_new = unified_constraint_vector(d0)
-MAX_INTERP_ATTEMPTS = 10
-interp_attempts     = 0
-while np.any(c_new > 0) and interp_attempts < MAX_INTERP_ATTEMPTS:
-    print(f"보간 시도 #{interp_attempts + 1}...")
+# c_new = unified_constraint_vector(d0)
+# MAX_INTERP_ATTEMPTS = 10
+# interp_attempts     = 0
+# while np.any(c_new > 0) and interp_attempts < MAX_INTERP_ATTEMPTS:
+#     print(f"보간 시도 #{interp_attempts + 1}...")
 
-    # 1. 보간으로 새로운 후보 지점 계산
-    d_safe_guess = np.array([5.0, 5.0]) # 예: 설계 공간의 중심
-    d_new = 0.7 * d0 + 0.3 * d_safe_guess # 현재 지점에 더 가중치를 둠
+#     # 1. 보간으로 새로운 후보 지점 계산
+#     d_safe_guess = np.array([5.0, 5.0]) # 예: 설계 공간의 중심
+#     d_new = 0.7 * d0 + 0.3 * d_safe_guess # 현재 지점에 더 가중치를 둠
 
-    # 2. 상태 및 계수 업데이트
-    d_old = d0
-    d0 = d_new
+#     # 2. 상태 및 계수 업데이트
+#     d_old = d0
+#     d0 = d_new
 
-    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
-    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
-    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
+#     c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X_samples_coef)
+#     c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X_samples_coef)
+#     c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X_samples_coef)
 
-    A1 = Psi1.T @ Psi1
-    A2 = Psi2.T @ Psi2
-    A3 = Psi3.T @ Psi3
-    # 3. 업데이트된 모델로 제약조건 재계산
-    c_new = unified_constraint_vector(d0)
-    interp_attempts += 1
+#     # A1 = Psi1.T @ Psi1
+#     # A2 = Psi2.T @ Psi2
+#     # A3 = Psi3.T @ Psi3
+#     # 3. 업데이트된 모델로 제약조건 재계산
+#     c_new = unified_constraint_vector(d0)
+#     interp_attempts += 1
 
-    print(f"  → 새 지점: {d0}, 제약조건 위반 값: {c_new[c_new > 0]}")
+#     print(f"  → 새 지점: {d0}, 제약조건 위반 값: {c_new[c_new > 0]}")
 #################################################################################
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 print(subregion_bounds)
@@ -201,9 +200,9 @@ d_old = d0 # [5 5]
 d0    = result1.x #e.g. [3.2 4.4]
 print(d0)
 
-c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
-c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
-c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
+c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X_samples_coef)
+c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X_samples_coef)
+c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X_samples_coef)
 
 objective_value_old = objective(d_old)
 objective_value_new = objective(d0)
@@ -214,9 +213,9 @@ c_new = unified_constraint_vector(d0)
 while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으면(True) 계속
 ):
 
-    A1 = Psi1.T @ Psi1
-    A2 = Psi2.T @ Psi2
-    A3 = Psi3.T @ Psi3
+    # A1 = Psi1.T @ Psi1
+    # A2 = Psi2.T @ Psi2
+    # A3 = Psi3.T @ Psi3
 
     c_new = unified_constraint_vector(d0) 
     c_old = unified_constraint_vector(d_old)
@@ -254,9 +253,9 @@ while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으�
 
     print("Final design: ", d0)
 
-    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
-    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
-    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
+    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X_samples_coef)
+    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X_samples_coef)
+    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X_samples_coef)
 
     objective_value_old = objective(d_old)
     objective_value_new = objective(d0)
@@ -271,9 +270,9 @@ while (
 ):
 
 
-    A1 = Psi1.T @ Psi1
-    A2 = Psi2.T @ Psi2
-    A3 = Psi3.T @ Psi3
+    # A1 = Psi1.T @ Psi1
+    # A2 = Psi2.T @ Psi2
+    # A3 = Psi3.T @ Psi3
 
     c_new = unified_constraint_vector(d0)
     c_old = unified_constraint_vector(d_old)    
@@ -308,9 +307,12 @@ while (
     d0 = result3.x     
     print(d0)
 
-    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X0_samples)
-    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X0_samples)
-    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X0_samples)
+
+##      c 와 직교다항식 업데이트    
+
+    c1, Psi1 = rebase_surrogate(d0, basis_terms, W, c1, Psi1, X_samples_coef)
+    c2, Psi2 = rebase_surrogate(d0, basis_terms, W, c2, Psi2, X_samples_coef)
+    c3, Psi3 = rebase_surrogate(d0, basis_terms, W, c3, Psi3, X_samples_coef)
 
 
     objective_value_old = objective(d_old)
