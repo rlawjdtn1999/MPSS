@@ -7,20 +7,19 @@ from scipy.optimize import differential_evolution, NonlinearConstraint
 import Parameters   
 import matplotlib.pyplot as plt
 
-
-##########################      파라미터 설정    ########################## 
+##########################      Parameters        ########################## 
 N         = Parameters.N  #2
 S         = Parameters.S  #2 , GPCE와 똑같음
 m         = Parameters.m  #[4, 4, 4]
 m1        = Parameters.m[0] # 효율을 위해 하나로 통일
-mean      = np.array(Parameters.mean)
-cov       = np.array(Parameters.cov1)
 
 d_init    = np.array([5.0, 5.0])    # 초기 설계 변수
-d_bounds  = [(0.0, 10.0), (0.0, 10.0)]  
+mean      = d_init
+cov       = np.array(Parameters.cov1)
 
+d_bounds  = [(0.0, 10.0), (0.0, 10.0)]  
 beta      = [0.3, 0.3]
-penalty_coeff = 1e2     # 패널티 가중치
+penalty_coeff = 1e3     # 패널티 가중치
 threesigma    = 1.35e-3    # 실패 확률 예제는 3시그마
 
 err1      = Parameters.err1 #1e-3
@@ -46,9 +45,11 @@ mean_0      = [0 , 0]
 def objective(d):
     return -d[0] + d[1]
 
+
+# single_step
 def unified_constraint_vector(d):
     # 3. 100만개 샘플에 대한 Psi_test 계산도 단 한 번만 수행
-    Z_samples_test = X_samples - d
+    Z_samples_test = Z_samples - d  + d0
     M_test = compute_M_matrix(Z_samples_test, basis_terms)
     Psi_test = M_test @ W.T
 
@@ -72,61 +73,32 @@ def unified_constraint_vector(d):
     ])
 
 def obj_with_penalty(d):
+    # global last_violations 
     f = objective(d)
-    c = unified_constraint_vector(d)  # [P1-α, P2-α, P3-α]
+    c = unified_constraint_vector(d)  # [P1-α, P2-α, P3-α]  
     violation = np.maximum(0, c)
     return f + penalty_coeff  * np.sum(violation**2)
 
-##########################   d 추적   ##########################
-plt.ion()
-fig, ax = plt.subplots()
-ax.set_xlim(d_bounds[0])
-ax.set_ylim(d_bounds[1])
-
-# 빈 산점도 & 텍스트 리스트
-scat = ax.scatter([], [], s=30)
-texts = []
-history = []
-
-def plot_callback(xk, convergence):
-    history.append(xk.copy())
-    H = np.array(history)
-    xs, ys = H[:,0], H[:,1]
-
-    # 1) 산점도 갱신
-    scat.set_offsets(np.c_[xs, ys])
-
-    # 2) 이전 텍스트 지우기
-    for txt in texts:
-        txt.remove()
-    texts.clear()
-
-    # 3) 각 점에 좌표 텍스트 추가
-    for xi, yi in zip(xs, ys):
-        txt = ax.text(
-            xi, yi,
-            f"({xi:.2f}, {yi:.2f})",
-            fontsize=8,
-            ha='left', va='bottom'
-        )
-        texts.append(txt)
-
-    # 4) 화면 갱신
-    fig.canvas.draw()
-    fig.canvas.flush_events()
-    plt.pause(0.01)
-################     MPSS   q = 1   ################################
-# global_data
-basis_terms = generate_monomial_basis(N, S, m1)
-W = compute_whitening_matrix(N, S, m1, mean_0, cov )
+def status_report(xk, convergence):
+    # 1) 현재 설계 벡터와 제약 위반 값 계산
+    violations = unified_constraint_vector(xk)
+    # 2) 보기 좋게 출력
+    print(f"d = [{xk[0]:.4f}, {xk[1]:.4f}], violations = {violations}")
+    
+    
+#####################        q = 1         ################################
 X_samples_coef  = generate_qmc_normal_samples(mean, cov, 64)
 X_samples   = generate_qmc_normal_samples(mean, cov, int(1e6))
+Z_samples_coef = X_samples_coef - mean    # 평균 0
+Z_samples = X_samples - mean              # 평균 0
+
+basis_terms = generate_monomial_basis(N, S, m1)
+W = compute_whitening_matrix(N, S, m1, mean_0, cov )
 y_functions = [y1, y2, y3]
 
-d0 = d_init
-Z0_samples = X_samples_coef - d0
-
-c_dict, Psi = fit_all_surrogates(y_functions)
+d0    = d_init
+c_dict, Psi = fit_all_surrogates(basis_terms, W, Z_samples_coef, y_functions)
+c_old = unified_constraint_vector(d0)
 
 subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
 print(subregion_bounds)
@@ -143,7 +115,7 @@ result1 = differential_evolution(
     tol=1e-2,
     workers=1,
     polish=False,   # 효율을 위해서    
-    callback    = plot_callback,        
+    callback    = status_report, ## status_report , plot_callback
     disp=True
 )
 
@@ -151,24 +123,16 @@ d_old = d0 # [5 5]
 d0    = result1.x #e.g. [3.2 4.4]
 print(d0)
 
-c_dict, Psi = rebase_all_surrogates(d0, c_dict, Psi)
+c_new = unified_constraint_vector(d0)
+c_dict, Psi = rebase_all_surrogates(basis_terms, W, X_samples_coef, d0, d_old, c_dict, Psi)
 
 objective_value_old = objective(d_old)
 objective_value_new = objective(d0)
 
-c_new = unified_constraint_vector(d0)
 
 ###########################    find_feasible2     ################################
-while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으면(True) 계속
-):
+while ( np.any(c_new > 0) ):
 
-    c_new = unified_constraint_vector(d0) 
-    c_old = unified_constraint_vector(d_old)
-
-    print("Constraint violations:", c_new)
-    print("All ≤0? ", np.all(c_new <= 0))
-    print("  → constraint values:", c_new, "  all feasible?", np.all(c_new <= 0))
-    
     beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
     subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
     print(subregion_bounds)
@@ -185,18 +149,22 @@ while ( np.any(c_new > 0)                   # <-- 하나라도 위반이 있으�
         tol=1e-3,
         workers=1,  
         polish=False,  
-        callback    = plot_callback, 
+        callback    = status_report,  ## status_report , plot_callback
         disp=True
     )
 
     d_old = d0 
     d0 = result2.x 
     print("Final design: ", d0)
-
-    c_dict, Psi = rebase_all_surrogates(d0, c_dict, Psi)
     
-    objective_value_old = objective(d_old)
+    c_new = unified_constraint_vector(d0) 
+    c_old = unified_constraint_vector(d_old)
+
     objective_value_new = objective(d0)
+    objective_value_old = objective(d_old)
+
+    c_dict, Psi = rebase_all_surrogates(basis_terms, W, X_samples_coef, d0, d_old, c_dict, Psi)
+
 
 
 ###########################    after_feasible     ################################
@@ -206,10 +174,7 @@ while (
     np.linalg.norm(d0 - d_old) > err1 and 
     np.abs(objective_value_new - objective_value_old) > err2
 ):
-
-    c_new = unified_constraint_vector(d0)
-    c_old = unified_constraint_vector(d_old)    
-
+   
     beta = update_beta(beta, d0, d_old, c_new, c_old, d_bounds, err_vals)
     subregion_bounds = get_subregion_bounds(d0, beta, d_bounds)
     print(subregion_bounds)
@@ -227,8 +192,8 @@ while (
         recombination=0.7,
         tol=1e-3,
         workers=1,  
-        callback    = plot_callback,     
-        polish=True,
+        callback    = status_report,   ## status_report , plot_callback   
+        polish=False,
         disp=True
     )
 
@@ -236,10 +201,13 @@ while (
     d0 = result3.x     
     print("Final design: ", d0)
 
-    c_dict, Psi = rebase_all_surrogates(d0, c_dict, Psi)
-
-    objective_value_old = objective(d_old)
     objective_value_new = objective(d0)
+    objective_value_old = objective(d_old)
+
+    c_new = unified_constraint_vector(d0)
+    c_old = unified_constraint_vector(d_old) 
+
+    c_dict, Psi = rebase_all_surrogates(basis_terms, W, X_samples_coef, d0, d_old, c_dict, Psi)
     
     d_history.append(d0.copy())
     print("d0 iteration history:")

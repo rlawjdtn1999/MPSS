@@ -14,7 +14,7 @@ def generate_qmc_normal_samples(mean, cov, n_samples):
     return mean + normal_samples @ L.T
 
 # fit_surrogate
-def fit_surrogate( basis_terms, W, y_func, Z0_samples): 
+def fit_surrogate( basis_terms, W, Z0_samples, y_func): 
     M = compute_M_matrix(Z0_samples, basis_terms)
     Psi = M @ W.T
     y_samples = y_func(Z0_samples)
@@ -24,8 +24,8 @@ def fit_surrogate( basis_terms, W, y_func, Z0_samples):
     return c, Psi
 
 # update_c
-def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, X_samples):
-    Z = X_samples - d 
+def rebase_surrogate(d, d_old, basis_terms, W, c_old, Psi_old, Z_samples):
+    Z = Z_samples - d + d_old
     M = compute_M_matrix(Z, basis_terms)      
     Psi_new = M @ W.T                         
 
@@ -36,24 +36,24 @@ def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, X_samples):
     return c_new, Psi_new
 
 # fit_surrogate for multiple functions
-def fit_all_surrogates( y_funcs):
+def fit_all_surrogates(basis_terms, W, Z_samples_coef, y_funcs):
      # Psi is calculated only ONCE, as it's independent of y_funcs.
-    M = compute_M_matrix(Z0_samples, basis_terms)
+    M = compute_M_matrix(Z_samples_coef, basis_terms)
     Psi = M @ W.T
 
     c_dict = {}
     for y_func in y_funcs:
-        y_samples = y_func(Z0_samples)
+        y_samples = y_func(Z_samples_coef)
         c, *_ = np.linalg.lstsq(Psi, y_samples, rcond=None)
         # Store the coefficient vector with the function name as the key
         c_dict[y_func.__name__] = c
 
     return c_dict, Psi
 
-# rebase_surrogate for multiple functions
-def rebase_all_surrogates(d, c_old_dict, Psi_old):
+# MPSS rebase_surrogate for multiple functions
+def rebase_all_surrogates(basis_terms, W, Z_samples_coef, d0, d_old, c_old_dict, Psi_old):
     # Calculate new Psi only ONCE.
-    Z = X_samples - d
+    Z = Z_samples_coef + d_old - d0 
     M = compute_M_matrix(Z, basis_terms)
     Psi_new = M @ W.T
 
@@ -74,7 +74,7 @@ def rebase_all_surrogates(d, c_old_dict, Psi_old):
 def y1(X):
     X1 = X[..., 0]
     X2 = X[..., 1]
-    return -1 + (X1**2 * X2)/ 20
+    return -1 + (X1**2)*(X2)/ 20
 
 def y2(X):
     X1 = X[..., 0]
@@ -84,4 +84,4 @@ def y2(X):
 def y3(X):
     X1 = X[..., 0]
     X2 = X[..., 1]
-    return -1 + 80 /(X1**2 +8 *X2 + 5)
+    return -1 + 80 /(X1**2 +8 * X2 + 5)
