@@ -38,7 +38,7 @@ def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, Z_samples):
 # fit_surrogate for multiple functions
 def fit_all_surrogates(basis_terms, W, X_samples_coef, Z_samples_coef, y_funcs):
      # Psi is calculated only ONCE, as it's independent of y_funcs.
-    M = compute_M_matrix(X_samples_coef, basis_terms)
+    M = compute_M_matrix(Z_samples_coef, basis_terms)
     Psi = M @ W.T
 
     c_dict = {}
@@ -53,8 +53,8 @@ def fit_all_surrogates(basis_terms, W, X_samples_coef, Z_samples_coef, y_funcs):
 # MPSS rebase_surrogate for multiple functions
 def rebase_all_surrogates(basis_terms, W, Z_samples_coef, d0, d_old, c_old_dict):
     # Calculate new Psi only ONCE.
-    Psi_new = compute_M_matrix(Z_samples_coef + d0   , basis_terms) @ W.T
-    Psi_old = compute_M_matrix(Z_samples_coef + d_old, basis_terms) @ W.T
+    Psi_old = compute_M_matrix(Z_samples_coef , basis_terms) @ W.T
+    Psi_new = compute_M_matrix(Z_samples_coef + d0 - d_old, basis_terms) @ W.T
     # Pre-calculate the A matrix for solving
     A = Psi_old.T @ Psi_old
 

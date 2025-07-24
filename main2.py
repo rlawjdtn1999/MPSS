@@ -48,7 +48,7 @@ def objective(d):
 # single_step
 def unified_constraint_vector(d):
     # 100만개 샘플에 대한 Psi_test 계산 한 번만 수행
-    Z_samples_test = Z_samples  + d  
+    Z_samples_test = Z_samples - d0 + d
     M_test = compute_M_matrix(Z_samples_test, basis_terms)
     Psi_test = M_test @ W.T
 
