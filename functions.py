@@ -24,8 +24,8 @@ def fit_surrogate( basis_terms, W, Z0_samples, y_func):
     return c, Psi
 
 # update_c
-def rebase_surrogate(d, d_old, basis_terms, W, c_old, Psi_old, Z_samples):
-    Z = Z_samples - d + d_old
+def rebase_surrogate(d, basis_terms, W, c_old, Psi_old, Z_samples):
+    Z = Z_samples + d 
     M = compute_M_matrix(Z, basis_terms)      
     Psi_new = M @ W.T                         
 
@@ -36,27 +36,25 @@ def rebase_surrogate(d, d_old, basis_terms, W, c_old, Psi_old, Z_samples):
     return c_new, Psi_new
 
 # fit_surrogate for multiple functions
-def fit_all_surrogates(basis_terms, W, Z_samples_coef, y_funcs):
+def fit_all_surrogates(basis_terms, W, X_samples_coef, Z_samples_coef, y_funcs):
      # Psi is calculated only ONCE, as it's independent of y_funcs.
-    M = compute_M_matrix(Z_samples_coef, basis_terms)
+    M = compute_M_matrix(X_samples_coef, basis_terms)
     Psi = M @ W.T
 
     c_dict = {}
     for y_func in y_funcs:
-        y_samples = y_func(Z_samples_coef)
+        y_samples = y_func(X_samples_coef)
         c, *_ = np.linalg.lstsq(Psi, y_samples, rcond=None)
         # Store the coefficient vector with the function name as the key
         c_dict[y_func.__name__] = c
 
-    return c_dict, Psi
+    return c_dict
 
 # MPSS rebase_surrogate for multiple functions
-def rebase_all_surrogates(basis_terms, W, Z_samples_coef, d0, d_old, c_old_dict, Psi_old):
+def rebase_all_surrogates(basis_terms, W, Z_samples_coef, d0, d_old, c_old_dict):
     # Calculate new Psi only ONCE.
-    Z = Z_samples_coef + d_old - d0 
-    M = compute_M_matrix(Z, basis_terms)
-    Psi_new = M @ W.T
-
+    Psi_new = compute_M_matrix(Z_samples_coef + d0   , basis_terms) @ W.T
+    Psi_old = compute_M_matrix(Z_samples_coef + d_old, basis_terms) @ W.T
     # Pre-calculate the A matrix for solving
     A = Psi_old.T @ Psi_old
 
@@ -68,7 +66,7 @@ def rebase_all_surrogates(basis_terms, W, Z_samples_coef, d0, d_old, c_old_dict,
         c_new = np.linalg.solve(A, B)
         c_new_dict[name] = c_new
 
-    return c_new_dict, Psi_new
+    return c_new_dict
     
 # design_functions
 def y1(X):

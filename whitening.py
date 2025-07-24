@@ -61,7 +61,6 @@ def compute_M_matrix_numba(X, basis_terms_nu, basis_terms_power):
 # 외부에서 호출할 때는 wrapper를 사용해 basis_terms를 배열 리스트로 변환
 def compute_M_matrix(X, basis_terms):
     """
-    numpy 버전 대신 이 함수를 호출하세요.
     basis_terms: List of (nu: list[int], power: list[float])
     """
     # numba가 이해할 수 있게 int64, float64 배열로 변환
